@@ -126,13 +126,18 @@
             left: 0;
             right: 0;
             text-align: center;
-            background: rgba(0, 0, 0, 0.7);
-            padding: 15px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
             font-size: 20px;
             line-height: 1.4;
             color: #fff;
-            z-index: 9999;
+            z-index: 999999999;
             display: none;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            word-wrap: break-word;
+            max-width: 90%;
+            margin: 0 auto;
         }
     </style>
 </head>
@@ -162,6 +167,7 @@
         let currentSubtitles = [];
         let subtitleUpdateInterval;
         let isFullscreen = false;
+        let fullscreenCheckInterval;
 
         // YouTube IFrame API callback
         function onYouTubeIframeAPIReady() {
@@ -197,12 +203,29 @@
         // Update subtitle display
         function updateSubtitleDisplay(subtitleText) {
             document.getElementById('subtitleOverlay').textContent = subtitleText;
-            if (isFullscreen) {
-                document.getElementById('fullscreenSubtitleOverlay').textContent = subtitleText;
+            document.getElementById('fullscreenSubtitleOverlay').textContent = subtitleText;
+        }
+
+        // Detect fullscreen by checking if iframe takes up most of the screen
+        function checkFullscreen() {
+            const iframe = document.getElementById('videoPlayer');
+            if (!iframe) return;
+            
+            const rect = iframe.getBoundingClientRect();
+            const windowHeight = window.innerHeight;
+            const windowWidth = window.innerWidth;
+            
+            // Consider fullscreen if iframe covers most of the screen
+            const isFullscreenNow = (rect.height > windowHeight * 0.8 && rect.width > windowWidth * 0.8);
+            
+            if (isFullscreenNow !== isFullscreen) {
+                isFullscreen = isFullscreenNow;
+                const fsOverlay = document.getElementById('fullscreenSubtitleOverlay');
+                fsOverlay.style.display = isFullscreen ? 'block' : 'none';
             }
         }
 
-        // Detect fullscreen changes
+        // Detect fullscreen changes - standard API
         document.addEventListener('fullscreenchange', () => {
             isFullscreen = !!document.fullscreenElement;
             const fsOverlay = document.getElementById('fullscreenSubtitleOverlay');
@@ -212,6 +235,13 @@
         // Also detect webkit fullscreen
         document.addEventListener('webkitfullscreenchange', () => {
             isFullscreen = !!document.webkitFullscreenElement;
+            const fsOverlay = document.getElementById('fullscreenSubtitleOverlay');
+            fsOverlay.style.display = isFullscreen ? 'block' : 'none';
+        });
+
+        // Firefox fullscreen
+        document.addEventListener('mozfullscreenchange', () => {
+            isFullscreen = !!document.mozFullScreenElement;
             const fsOverlay = document.getElementById('fullscreenSubtitleOverlay');
             fsOverlay.style.display = isFullscreen ? 'block' : 'none';
         });
@@ -309,9 +339,12 @@
             // Parse and store current video's subtitles
             currentSubtitles = parseSubtitles(video.subtitles);
             
-            // Clear any existing interval
+            // Clear any existing intervals
             if (subtitleUpdateInterval) {
                 clearInterval(subtitleUpdateInterval);
+            }
+            if (fullscreenCheckInterval) {
+                clearInterval(fullscreenCheckInterval);
             }
             
             // Track time since play started for subtitle sync
@@ -337,6 +370,11 @@
                     updateSubtitleDisplay(subtitleText);
                 }
             }, 100);
+            
+            // Check for fullscreen mode every 500ms
+            fullscreenCheckInterval = setInterval(() => {
+                checkFullscreen();
+            }, 500);
             
             window.scrollTo(0, 0);
         }
