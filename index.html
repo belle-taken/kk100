@@ -156,7 +156,7 @@
         
         <div id="playerSection" class="player-section hidden">
             <div class="player-wrapper">
-                <iframe id="videoPlayer" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                <div id="videoPlayer"></div>
                 <div class="subtitle-overlay" id="subtitleOverlay"></div>
             </div>
         </div>
@@ -173,7 +173,6 @@
         let subtitleUpdateInterval;
         let isFullscreen = false;
         let fullscreenCheckInterval;
-        let messageListenerAttached = false;
 
         // YouTube IFrame API callback
         function onYouTubeIframeAPIReady() {
@@ -214,21 +213,21 @@
 
         // Detect fullscreen by checking if iframe takes up most of the screen
         function checkFullscreen() {
-            const iframe = document.getElementById('videoPlayer');
+            const playerDiv = document.getElementById('videoPlayer');
             const playerSection = document.getElementById('playerSection');
-            if (!iframe || !playerSection) return;
+            if (!playerDiv || !playerSection) return;
             
-            const rect = iframe.getBoundingClientRect();
+            const rect = playerDiv.getBoundingClientRect();
             const windowHeight = window.innerHeight;
             const windowWidth = window.innerWidth;
             
             // Also check if player section is taking up most of the view
             const playerRect = playerSection.getBoundingClientRect();
             
-            // Consider fullscreen if iframe covers 75%+ of screen or player is very large
-            const iframeCoverage = (rect.height / windowHeight) * (rect.width / windowWidth);
-            const playerCoverage = (playerRect.height / windowHeight) * (playerRect.width / windowWidth);
-            const isFullscreenNow = iframeCoverage > 0.75 || playerCoverage > 0.75 || 
+            // Consider fullscreen if player covers 75%+ of screen or player is very large
+            const playerCoverage = (rect.height / windowHeight) * (rect.width / windowWidth);
+            const sectionCoverage = (playerRect.height / windowHeight) * (playerRect.width / windowWidth);
+            const isFullscreenNow = playerCoverage > 0.75 || sectionCoverage > 0.75 || 
                                     (rect.height > windowHeight * 0.7 && rect.width > windowWidth * 0.7);
             
             if (isFullscreenNow !== isFullscreen) {
@@ -355,8 +354,6 @@
             }
             
             document.getElementById('playerSection').classList.remove('hidden');
-            const iframe = document.getElementById('videoPlayer');
-            iframe.src = `https://www.youtube.com/embed/${video.youtubeId}?enablejsapi=1`;
             
             // Parse and store current video's subtitles
             currentSubtitles = parseSubtitles(video.subtitles);
@@ -369,30 +366,38 @@
                 clearInterval(fullscreenCheckInterval);
             }
             
-            // Track time since play started for subtitle sync
-            let playStartTime = Date.now();
-            let isPlaying = true;
-            
-            // Attach message listener only once
-            if (!messageListenerAttached) {
-                window.addEventListener('message', function handlePlayerState(event) {
-                    if (typeof event.data === 'object' && event.data.event === 'infoDelivery') {
-                        if (event.data.info && event.data.info.hasOwnProperty('currentTime')) {
-                            const currentTime = event.data.info.currentTime;
-                            const subtitleText = getSubtitleForTime(currentTime, currentSubtitles);
-                            updateSubtitleDisplay(subtitleText);
-                        }
+            // Create or update YouTube player
+            if (player) {
+                player.loadVideoById(video.youtubeId);
+            } else {
+                player = new YT.Player('videoPlayer', {
+                    height: '100%',
+                    width: '100%',
+                    videoId: video.youtubeId,
+                    events: {
+                        'onReady': onPlayerReady,
+                        'onStateChange': onPlayerStateChange,
+                        'onError': onPlayerError
+                    },
+                    playerVars: {
+                        'controls': 1,
+                        'modestbranding': 1,
+                        'rel': 0,
+                        'fs': 1
                     }
                 });
-                messageListenerAttached = true;
             }
             
-            // Fallback: Update subtitles every 100ms using elapsed time
+            // Update subtitles every 100ms based on actual player time
             subtitleUpdateInterval = setInterval(() => {
-                if (isPlaying) {
-                    const elapsedSeconds = (Date.now() - playStartTime) / 1000;
-                    const subtitleText = getSubtitleForTime(elapsedSeconds, currentSubtitles);
-                    updateSubtitleDisplay(subtitleText);
+                if (player && player.getCurrentTime) {
+                    try {
+                        const currentTime = player.getCurrentTime();
+                        const subtitleText = getSubtitleForTime(currentTime, currentSubtitles);
+                        updateSubtitleDisplay(subtitleText);
+                    } catch (e) {
+                        // Player might not be ready yet
+                    }
                 }
             }, 100);
             
@@ -402,6 +407,19 @@
             }, 250);
             
             window.scrollTo(0, 0);
+        }
+        
+        function onPlayerReady(event) {
+            console.log('Player is ready');
+            event.target.playVideo();
+        }
+        
+        function onPlayerStateChange(event) {
+            // Player state changed - subtitle sync happens in the interval
+        }
+        
+        function onPlayerError(event) {
+            console.error('Player error:', event.data);
         }
 
         document.getElementById('searchInput').addEventListener('input', (e) => {
